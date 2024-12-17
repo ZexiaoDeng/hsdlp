@@ -1,0 +1,839 @@
+\documentclass{ctexart}
+%\documentclass[UTF8, 12pt, a4paper, oneside, leqno]{ctexart} % leqno表示公式编号放在左边。
+\usepackage{CJK}
+%\usepackage{ctex}
+\usepackage{geometry} 
+\geometry{left=2.0cm,right=2.0cm,top=2.5cm,bottom=2.5cm}  %页边距处理  
+\usepackage{authblk} %作者及署名单位
+%\usepackage[T1]{fontenc}
+%\usepackage{fancyhdr} % 设置页眉页脚页码 
+\usepackage{titlesec} % 控制标题的宏包
+\usepackage{url} % 用来引用网址
+\usepackage{amsmath} % 对齐aligned要用到
+\numberwithin{equation}{section} % 公式加section编号，声明amsmath宏包
+\usepackage{ntheorem} % 为了证明去掉编号。
+\usepackage{empheq} % 公式编号(1.a)或用subequations
+\usepackage{enumerate} % 编写item用到
+\usepackage{paralist} % 解决itemize和enumerate的item间距过大问题
+\let\itemize\compactitem
+\let\enditemize\endcompactitem
+\let\enumerate\compactenum
+\let\endenumerate\endcompactenum
+\let\description\compactdesc
+\let\enddescrition\endcompactdesc
+\usepackage{hyperref}  % 公式超链接
+\usepackage{cases} % 方程组分别编号
+\usepackage{appendix}
+\usepackage[ruled,linesnumbered]{algorithm2e}
+\usepackage{color}
+%\sloppy
+\definecolor{lightgray}{gray}{0.5}
+%\setlength{\parindent}{0pt}
+
+
+
+% 标题控制
+\titleformat{\section}{\fontsize{12pt}{12pt}\selectfont}{\textbf{\thesection}}{1em}\textbf{}
+\titleformat{\subsection}{\fontsize{10.5pt}{10.5pt}\selectfont}{\thesubsection}{1em}\textbf{}
+\titleformat{\subsubsection}{\fontsize{9pt}{9pt}\selectfont}{\thesubsection}{1em}\textbf{}
+
+% 数学定义定理引理证明推论等
+\newtheorem{definition}{定义}[section]
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}{引理}[section]
+\newtheorem*{Proof}{证明}
+\newtheorem{axiom}{公理}[section]
+\newtheorem{proposition}{命题}[section]
+\newtheorem{corollary}{推论}[section]
+\newtheorem{remark}{备注}[section]
+
+% 论文标题
+\title{\textbf{齐次自对偶算法}}
+\author{邓泽晓（译）}
+\affil{中山大学航空航天学院，深圳，中国}
+\date{\today}
+
+\begin{document}
+	
+	\maketitle
+%	\tableofcontents
+%	\newpage
+\begin{abstract}
+	本文主要关注齐次自对偶在线性规划(LP)上的嵌入使用，主要是为了解决内点算法初始点需为可行点的限制问题。常用内点算法初始化可以参考使用的方法有大M罚函数法，阶段一阶段二法和齐次自对偶法。齐次自对偶算法是路径跟踪内点算法在使用操作上的实现，它已被证明在算法复杂性上要优于阶段一阶段二法。本文只是关于此方法的一个学习笔记，主要参考文献\cite{Robert2014}。
+	
+	\noindent{\textbf{关键词:}} {齐次自对偶法；内点算法；算法初始化}
+\end{abstract}
+
+\section{引文}
+
+本文主要分为3个部分。第1部分是介绍齐次自对偶的构造与嵌入；第2部分是关于给出算法的完整流程；而第3部分则是数值算例验证。
+
+\section{齐次自对偶嵌入}
+\label{se: HSDembedding}
+
+这里先从标准的线性规划问题(LP)，然后转化到其自对偶的形式。下面先给出标准LP问题的及其对偶LP问题，
+\begin{equation}
+	\label{Eq: primalLP}
+	\begin{aligned}
+	\textrm{maxmize} \quad c^{T} x & \\
+	\textrm{subject to} \quad Ax & \leq b \\
+	x & \geq 0 
+	\end{aligned}
+\end{equation}
+它的对偶LP问题为，
+\begin{equation}
+	\label{Eq: dualLP}
+	\begin{aligned}
+	\textrm{minimize} \quad b^{T} y & \\
+	\textrm{subject to} \quad A^{T}y & \geq b \\
+	y & \geq 0
+	\end{aligned}
+\end{equation}
+
+下面给出原始LP问题和对偶LP问题的组合形式。显然地，这个组合问题的解即为原始LP问题和对偶LP问题的解。其组合形式为，
+\begin{equation}
+	\label{Eq: HSDP}
+	\begin{array}{crcrcccc}
+		\textrm{maximize} & & & & & 0 & &  \\
+		\textrm{subject to} & & - & A^{T}y \  & + & c\phi & \leq & 0, \\
+		& Ax  & & & - & b\phi & \leq & 0, \\
+		& -c^{T}x & + & b^{T}y \  & & & \leq & 0, \\
+		& & & x, & y, & \phi & \geq & 0.
+	\end{array}
+\end{equation}
+上式有以下几个特点：(1)引入了一个新的变量$ \phi $和一个新的约束；(2)总变量和总约束的个数均为$ n + m + 1 $；(3)目标函数和所有约束的右手边均为零，对应问题称为齐次的LP问题(Homogeneous LP)；(4)约束矩阵是反对称的。拥有反对称约束矩阵的齐次LP问题称是自对偶的(Self-Dual)，问题称为齐次自对偶线性规划问题(Homogeneous Self-Dual Linear Programming, HSDP)。
+
+从式(\ref{Eq: HSDP})可以看出，当$ \phi > 0 $时，式(\ref{Eq: HSDP})的解可以转换成式(\ref{Eq: primalLP})和式(\ref{Eq: dualLP})的解。下面假设$ \left(\bar{x}, \bar{y}, \bar{\phi} \right) $为问题 (\ref{Eq: HSDP}) 的最优解。下面分两种情况分析，一是假设$ \bar{\phi} > 0 $(后面会证明如此构造，无论什么时候式(\ref{Eq: primalLP})和式(\ref{Eq: dualLP})始终都有最优解)，以及令$ x^{*} = \bar{x}/\bar{\phi} $，$ y^{*} = \bar{y}/\bar{\phi} $，代入式(\ref{Eq: HSDP})的约束可得，
+\begin{equation}
+	\begin{array}{rcrcccc}
+		 & - & A^{T}y^* \  & + & c & \leq & 0 \\
+		Ax^*  & & & - & b & \leq & 0 \\
+		-c^{T}x^* & + & b^{T}y^* \  & & & \leq & 0 \\
+	\end{array} \nonumber
+\end{equation}
+由上式第3个式子可知，弱对偶定理始终是满足。而当$ c^{T}x^* = b^{T}y^*  $成立时，$ x^* $即为原始问题(\ref{Eq: primalLP})的最优解，$ y^* $为对偶问题(\ref{Eq: dualLP})的最优解。二是$ \bar{\phi} = 0 $时，对应即为问题不可行的情况，并且与原始问题不可行，对偶问题不可行或原始对偶问题皆不可行三种情况。
+
+考虑原始问题(\ref{Eq: primalLP})和对偶问题(\ref{Eq: dualLP})，若$ m = n $，$ A = -A^{T} $和$ b = -c $，则称这样的线性规划问题是自对偶的。而当目标函数和约束的右手边都为零时，称这样的线性规划为齐次的。下面的分析都是基于齐次自对偶线性规划问题展开的，并且这里只分析原始问题的情况，因为对偶问题在齐次自对偶假设的条件下分析结果是一样的。设$ z $为原始松弛变量，原始问题改写成，
+\begin{equation}
+	\label{Eq: primalHSDP}
+	\begin{array}{crcccc}
+		\textrm{maxmize} & & & 0 & &\\
+		\textrm{subject to} & Ax\  & + & z & = & 0 \\
+		 & x, & & z & \geq & 0 
+	\end{array}
+\end{equation}
+
+对齐次自对偶线性规划，即式(\ref{Eq: primalHSDP})的一些性质定理展开分析：
+\begin{theorem}
+	\label{th: feasibleSolution}
+	对于齐次自对偶问题(\ref{Eq: primalHSDP})，有下列性质：
+	\begin{enumerate}[(1)]
+		\item \label{th: feasibleSolution.a} 问题存在可行解且每一个可行解都是最优解；\\
+		\item \label{th: feasibleSolution.b} 可行解集没有内点。事实上，如果$ \left(x, z\right) $是可行解，则$ z^{T}x = 0 $。
+	\end{enumerate}
+\end{theorem}
+\begin{Proof}
+	(\ref{th: feasibleSolution.a})平凡解$ \left(x, z\right)  = \left(0, 0\right)$显然是可行解。目标函数值是零，故所有可行解都是最优解。
+	
+	(\ref{th: feasibleSolution.b})假设$ \left(x, z\right) $是问题(\ref{Eq: primalHSDP})的可行解。而$ A $是反对称的，意味着对于任意一个$ \xi $有$ {\xi}^{T}A\xi = 0 $成立。在式$ Ax + z = 0 $两边左乘$ x^{T} $，得$ x^Tz = 0 $。证毕。
+\end{Proof}
+
+定理\ref{th: feasibleSolution}(\ref{th: feasibleSolution.b})告诉我们齐次自对偶问题是没有中心路径的。
+
+\subsection{搜索方向及其步长}
+
+这里先定义两个函数描述当前解的不可行性(Infeasibility)和非互补性(noncomplementarity)。解$ \left(x, z\right) $对于求解问题的不可行程度用，
+\begin{equation}
+	\rho\left(x, z\right) = Ax + z. \nonumber
+\end{equation}
+来度量；而$ x $和$ z $之间的非互补程度用，
+\begin{equation}
+	\mu\left(x, z\right) = \frac{1}{n}x^{T}z. \nonumber
+\end{equation}
+来度量。简写$ \rho\left(x, z\right)  $和$ \mu\left(x, z\right) $为$ \rho $和$ \mu $。
+
+而步长搜索方向$ \left(\Delta x, \Delta z\right) $选择为降低不可行性和非互补性的方向。转化此思想为数学表达式，这里需要引入一个转化因子$ \delta $，$ 0 \leq \delta \leq 1 $。需要每步迭代更新解$ \left(x + \Delta x, z + \Delta z\right) $的不可行性和非互补性都是当前解$ \left(x, z\right) $的$ \delta $倍，即
+\begin{equation}
+	\begin{aligned}
+		A\left(x + \Delta x\right) + \left(z + \Delta z\right) & = \delta\left(Ax + z\right),  \\
+		\left(X + \Delta X\right)\left(Z + \Delta Z\right)e & = \delta\mu\left(x, z\right)e.
+	\end{aligned} \nonumber
+\end{equation}
+显然，此式子是非线性的。但第二个式子的二阶小项对结果影响较小，去掉后可以得到求解搜索方向的线性方程组，
+\begin{eqnarray}
+		A\Delta x + \Delta z & = & -\left(1 - \delta\right)\rho\left(x, z\right),  \label{Eq: infeasibleSD} \\
+		Z\Delta x + X\Delta z & = & \delta\mu\left(x, z\right) - XZe. \label{Eq: noncomplementarySD}
+\end{eqnarray}
+
+设步长为$ \theta $，迭代更新得到，
+\begin{equation}
+	\bar{x} = x + \theta\Delta x, \qquad \bar{z} = z + \theta\Delta z.  \nonumber
+\end{equation}
+由更新点得到不可行程度和非互补性程度值记为，
+\begin{equation}
+	\bar{\rho} = \rho\left(\bar{x}, \bar{z}\right), \qquad \bar{\mu} = \mu\left(\bar{x}, \bar{z}\right).  \nonumber
+\end{equation}
+
+下面定理给出所建立的搜索方向和步长的一些性质。
+\begin{theorem}
+	\label{th: stepDirection}
+	以下式子恒成立：
+	\begin{enumerate}[(1)]
+			\item \label{th: stepDirection.a} $ \Delta z^{T}\Delta x = 0 $; 
+			\item \label{th: stepDirection.b} $ \bar{\rho} = \left(1 - \theta + \theta\delta\right)\rho $; 
+			\item \label{th: stepDirection.c} $ \bar{\mu} = \left(1 - \theta + \theta\delta\right)\mu $; 
+			\item \label{th: stepDirection.d} $ \bar{X}\bar{Z}e - \bar{\mu}e = \left(1 - \theta\right)\left(XZe - \mu e\right) + {\theta}^2\Delta X\Delta Ze $.
+	\end{enumerate}
+\end{theorem}
+\begin{Proof}
+	(\ref{th: stepDirection.a})式(\ref{Eq: infeasibleSD})两边左乘$ \Delta x^{T} $得，
+	\begin{equation}
+		\label{Eq: SDProof.a}
+		\Delta x^{T}A\Delta x + \Delta x^{T}\Delta z = -\left(1 - \delta\right)\Delta x^{T}\rho.
+	\end{equation}
+	由矩阵$ A $的反对称特性可知$ \Delta x^{T}A\Delta x = 0 $。因而式的左(\ref{Eq: SDProof.a})手边简化为，
+	\begin{equation}
+		\Delta x^{T}A\Delta x + \Delta x^{T}\Delta z = \Delta x^{T}\Delta z.  \nonumber
+	\end{equation}
+	式(\ref{Eq: SDProof.a})中的$ \rho $用其定义替代得，
+	\begin{equation}
+		-\left(1 - \delta\right)\Delta x^{T}\rho = -\left(1 - \delta\right)\Delta x^{T}\left(Ax + z\right).  \nonumber
+	\end{equation}
+	而利用$ A $的反对称性质重新排列$ \Delta x^{T}Ax $如下，
+	\begin{equation}
+		\Delta x^{T}Ax = \left(Ax\right)^T\Delta x = x^TA^T\Delta x = -x^TA\Delta x.  \nonumber
+	\end{equation}
+	通过整理可以得，
+	\begin{equation}
+		\label{Eq: SDProof.b}
+		\Delta x^T\Delta z = - \left(1 - \delta\right)\left(-x^TA\Delta x + z^T\Delta x\right).
+	\end{equation}
+	右手边括号部分可使用式(\ref{Eq: infeasibleSD})替代得，
+	\begin{equation}
+		\label{Eq: SDProof.c}
+		-x^TA\Delta x + z^T\Delta x = \left(1 - \delta\right)x^T\rho + x^T\Delta z + z^T\Delta x.
+	\end{equation}
+	利用$ A $的反对称特性，有下列式子,
+	\begin{equation}
+		x^T\rho = x^T\left(Ax + z\right) = x^Tz.  \nonumber
+	\end{equation}
+	而式(\ref{Eq: SDProof.c})最后两项可以用式(\ref{Eq: noncomplementarySD})两边左乘$ e^T $后替代。这里再代入$ \mu $的定义式得，
+	\begin{equation}
+		z^T\Delta x + x^T\Delta z = \delta\mu n - x^Tz = \left(\delta - 1\right)x^Tz.  \nonumber
+	\end{equation}
+	把上式代入式(\ref{Eq: SDProof.c})得，
+	\begin{equation}
+		-x^TA\Delta x + z^T\Delta x = \left(1 - \delta\right)x^Tz + \left(\delta - 1\right)x^Tz = 0.  \nonumber
+	\end{equation}
+	从式(\ref{Eq: SDProof.b})可知，$ \Delta x^T\Delta z = 0 $。定理\ref{th: stepDirection}(\ref{th: stepDirection.a})得证。
+	(\ref{th: stepDirection.b})从$ \bar{x} $和$ \bar{z} $的定义可知，
+	\begin{equation}
+		\begin{aligned}
+			\rho & = A\left(x + \theta\Delta x\right) + \left(z + \theta\Delta z\right) \\
+			& = Ax + z + \theta\left(A\Delta x + \Delta z\right) \\
+			& = \left(1 - \theta + \theta\delta\right)\rho.
+		\end{aligned}. \nonumber
+	\end{equation}
+	(\ref{th: stepDirection.c})同理可得，
+	\begin{equation}
+		\begin{aligned}
+			\bar{x}^T\bar{z} & = \left(x + \theta\Delta x\right)^T\left(z + \Delta z\right) \\
+			& = x^Tz + \theta\left(z^T\Delta x + x^T\Delta z\right) + {\theta}^2\Delta z^T\Delta x.
+		\end{aligned}. \nonumber
+	\end{equation}
+	从(\ref{th: stepDirection.a})和式(\ref{Eq: noncomplementarySD})，我们可得，
+	\begin{equation}
+		\bar{x}^T\bar{z} = x^Tz + \theta\left(\delta\mu n - x^Tz\right).  \nonumber
+	\end{equation}
+	因此，
+	\begin{equation}
+		\bar{mu} = \frac{1}{n}\bar{x}^T\bar{z} = \left(1 - \theta\right)\mu + \theta\delta\mu.  \nonumber
+	\end{equation}
+	(\ref{th: stepDirection.d})根据$ \bar{x} $和$ \bar{z} $的定义和定理\ref{th: stepDirection}(\ref{th: stepDirection.c})可得，
+	\begin{equation}
+		\begin{aligned}
+			\bar{X}\bar{Z}e - \bar{\mu}e & = \left(X + \theta\Delta X\right)\left(Z + \theta\Delta Z\right)e - \left(1 - \theta + \theta\delta\right)\mu e \\
+			& = XZe + \theta\left(Z\Delta x + X\Delta z\right) + {\theta}^2\Delta X\Delta Ze - \left(1 - \theta + \theta\delta\right)\mu e.
+		\end{aligned}. \nonumber
+	\end{equation}
+	而上式右边第二项代入式(\ref{Eq: noncomplementarySD})即可得到(\ref{th: stepDirection.d})的形式。证毕。
+\end{Proof}
+
+\subsection{预估校正算法}
+
+在前面铺垫好理论基础之后，这里准备介绍一个算法。令，
+\begin{equation}
+	\mathcal{N}\left(\beta\right) = \left\{\left(x, z\right) > 0 : \parallel XZe - \mu\left(x, z\right)e\parallel \leq \beta\mu\left(x, z\right)\right\}. \nonumber
+\end{equation}
+这里只处理$ \mathcal{N}\left(1/4\right) $和$ \mathcal{N}\left(1/2\right) $的情况。从定义可得当$ \beta < {\beta}^{'} $时有$ \mathcal{N}\left(\beta\right) \subseteq \mathcal{N}\left(\beta^{'}\right)  $。而$ \mathcal{N}\left(0\right) $就是标准中心路径点$ \left(x, z\right) $构成的集合。
+
+算法可以转化成两种类型的迭代步。首先在奇数迭代步中执行的是预估步。假设，
+\begin{equation}
+	\left(x, z\right) \in \mathcal{N}\left(1/4\right). \nonumber
+\end{equation}
+在预估步中搜索方向参数选择为$ \delta = 0 $，步长参数选择不能使点$ \left(x, z\right) $超出$ \mathcal{N}\left(1/2\right) $，故选择步长为，
+\begin{equation}
+	\label{Eq: predictorStepLength}
+	\theta = \max\left\{t:\left(x + t\Delta x, z + t\Delta z\right) \in \mathcal{N}\left(1/2\right) \right\}.
+\end{equation}
+而在偶数迭代步中执行的是校正步。假设，
+\begin{equation}
+	\left(x, z\right) \in \mathcal{N}\left(1/2\right). \nonumber
+\end{equation}
+(保证预估步步长参数的选择)。在校正步中搜索方向参数选择为$ \delta = 1 $，步长参数选择为$ \theta = 1 $。
+
+接下来的定理说明在算法的每执行一步预估步的时候$ \mu $值都会减少，而在执行校正步的时候保持不变。
+\begin{theorem}
+	\label{th: predictorCorrector}
+	以下结论恒成立：
+	\begin{enumerate}[(1)]
+		\item \label{th: predictorCorrector.a} 在每一步预估步执行完之后，$ \left(\bar{x}, \bar{z}\right) \in \mathcal{N}\left(1/2\right) $并且$ \bar{\mu} = \left(1 - \theta\right)\mu $；
+		\item \label{th: predictorCorrector.b} 在每一步校正步执行完之后，$ \left(\bar{x}, \bar{z}\right) \in \mathcal{N}\left(1/4\right) $并且$ \bar{\mu} = \mu $；
+	\end{enumerate}
+\end{theorem}
+\begin{Proof}
+	(\ref{th: predictorCorrector.a})由定理\ref{th: stepDirection}(\ref{th: stepDirection.c})得，在执行预估步时$ \delta = 0 $，$ \bar{\mu} $值等式成立的结果是显然的。而$ \left(\bar{x}, \bar{z}\right) \in \mathcal{N}\left(1/2\right) $则可由预估步的步长参数$ \theta $的选择确定。
+	
+	(\ref{th: predictorCorrector.b})在证明之前，我们要引入几个变量推导一些结果，
+	\begin{eqnarray}
+		p & = & X^{-1/2}Z^{1/2}\Delta x, \nonumber \\
+		q & = & X^{1/2}Z^{-1/2}\Delta z, \nonumber \\
+		r & = & p + q \nonumber \\
+		  & = & X^{-1/2}Z^{-1/2}\left(Z\Delta x + X\Delta z\right) \nonumber \\
+		  & = & X^{-1/2}Z^{-1/2}\left(\delta\mu e - XZe\right). \label{Eq: transVarible}
+	\end{eqnarray}
+	通过上面定义的变量可以推出以下引理。
+	\begin{lemma}
+		\label{le: technicalResults}
+		以下结论恒成立：
+		\begin{enumerate}[(1)]
+			\item \label{le: technicalResults.a} $ \parallel PQe \parallel \leq \frac{1}{2}{\parallel r \parallel}^2 $；
+			\item \label{le: technicalResults.b} 如果$ \delta = 0 $，则$ {\parallel r \parallel}^2 = n\mu $；
+			\item \label{le: technicalResults.c} 如果$ \delta = 1 $并且$ \left(x, z\right) \in \mathcal{N}\left(\beta\right) $，则$ {\parallel r \parallel}^2 \leq {\beta}^2\mu/\left(1 - \beta\right) $
+		\end{enumerate}
+	\end{lemma}
+	\begin{Proof}
+		(\ref{le: technicalResults.a})从定理\ref{th: stepDirection}(\ref{th: stepDirection.a})知$ p^Tq = \Delta x^T\Delta z = 0 $，因此，
+		\begin{equation}
+			{\parallel r \parallel}^2 = {\parallel p + q \parallel}^2 = p^Tp + 2p^Tq + q^Tq = \sum_j \left(p_j^2 + q_j^2\right).  \nonumber
+		\end{equation}
+		进而，
+		\begin{equation}
+			\begin{aligned}
+				{\parallel r \parallel}^4 & = {\left(\sum_j \left(p_j^2 + q_j^2\right)\right)}^2 \\
+				& \geq \sum_j {\left(p_j^2 + q_j^2\right)}^2 \\
+				& = \sum_j \left({\left(p_j^2 - q_j^2\right)}^2 + 4p_j^2q_j^2\right) \\
+				& \geq 4\sum_j p_j^2q_j^2 \\
+				& = 4{\parallel PQe \parallel}^2.
+			\end{aligned} \nonumber
+		\end{equation}
+		上式开方后引理\ref{le: technicalResults}(\ref{le: technicalResults.a})得证。
+		
+		(\ref{le: technicalResults.b})把$ \delta = 0 $代入式(\ref{Eq: transVarible})得$ r = -X^{1/2}Z^{1/2}e $，故有$ {\parallel r \parallel}^2 = z^Tx = n\mu $。
+		
+		(\ref{le: technicalResults.c})假设$ \left(x, z\right) \in \mathcal{N}\left(\beta\right) $。由$ \mathcal{N}\left(\beta\right) $的定义式可推出$ |x_jz_j - \mu| \leq \beta\mu $。此不等式等效于，
+		\begin{equation}
+			\label{Eq: noncomplementarityLimit}
+			\left(1 - \beta\right)\mu \leq x_jz_j \left(1 + \beta\right)\mu.
+		\end{equation}
+		现在把$ \delta = 1 $代入式(\ref{Eq: transVarible})得，
+		\begin{equation}
+			{\parallel r \parallel}^2 = \sum_j \frac{\left(x_jz_j - \mu\right)^2}{x_jz_j}. \nonumber
+		\end{equation}
+		因此，代入式(\ref{Eq: noncomplementarityLimit})可得，
+		\begin{equation}
+			{\parallel r \parallel}^2 \leq \frac{1}{\left(1 - \beta\right)\mu}\sum_j \left(x_jz_j - \mu\right)^2. \nonumber
+		\end{equation}
+		因为$ \left(x, z\right) \in \mathcal{N}\left(\beta\right) $，所以上式求和的上界即为$ {\beta}^2{\mu}^2 $，代入上式，引理\ref{le: technicalResults}(\ref{le: technicalResults.c})得证。
+	\end{Proof}
+	下面回到证明定理\ref{th: predictorCorrector}(\ref{th: predictorCorrector.b})。因为校正步中，$ \theta = 1 $，代入定理\ref{th: stepDirection}(\ref{th: stepDirection.d})可得$ \bar{X}\bar{Z}e - \bar{\mu}e = \Delta X \Delta Ze = PQe $。使用引理\ref{le: technicalResults}的(\ref{le: technicalResults.a})和(\ref{le: technicalResults.c})得，
+	\begin{equation}
+		\label{Eq: lemmaImply}
+		\begin{aligned}
+			\parallel \bar{X}\bar{Z}e - \bar{\mu}e \parallel & = \parallel PQe \parallel  \\
+			& \leq \frac{1}{2} {\parallel r \parallel}^2 \\
+			& \leq \frac{1}{2} \frac{\left(1/2\right)^2}{1 - 1/2}\mu \\
+			& = \frac{1}{4}\mu. 
+		\end{aligned}
+	\end{equation}
+	这里还需要证实$ \left(\bar{x}, \bar{z}\right) > 0 $。对于$ 0 \leq t \leq 1 $，令，
+	\begin{equation}
+		x\left(t\right) = x + t\Delta x, \quad z\left(t\right) = z + t\Delta z, \quad \mu\left(t\right) = \mu\left(x\left(t\right), z\left(t\right)\right). \nonumber
+	\end{equation}
+	由定理\ref{th: stepDirection}(\ref{th: stepDirection.d})可得，
+	\begin{equation}
+		X\left(t\right)Z\left(t\right) - \mu\left(t\right)e = \left(1 - t\right)\left(XZe - \mu e\right) + t^2\Delta X\Delta Ze. \nonumber
+	\end{equation}
+	观察发现上式右手边是两个向量的和。由三角不等式知，两个向量和的长度小于两个向量长度的和，即，
+	\begin{equation}
+		\label{Eq: triangleInequality}
+		\parallel X\left(t\right)Z\left(t\right) - \mu\left(t\right)e \parallel \leq \left(1 - t\right)\parallel XZe - \mu e \parallel + t^2\parallel \Delta X\Delta Ze \parallel. 
+	\end{equation}
+	由$ \left(x, z\right) \in \mathcal{N} $得$ \parallel XZe - \mu e \parallel \leq \mu/2 $，并且从式(\ref{Eq: lemmaImply})可得$ \parallel \Delta X \Delta Ze \parallel = \parallel PQe \parallel \leq \mu/4 $，把它们都代入式(\ref{Eq: triangleInequality})替换上界，
+	\begin{equation}
+		\label{Eq: upperBounds}
+		\parallel X\left(t\right)Z\left(t\right)e - \mu\left(t\right)e \parallel \leq \left(1 - t\right)\frac{\mu}{2} + t^2\frac{\mu}{4} \leq \frac{\mu}{2}.
+	\end{equation}
+	(因为$ t^2 \leq t $和$ \mu/4 \leq \mu/2 $，右边第二个不等号显然成立。)
+	
+	现在，从式(\ref{Eq: upperBounds})拆出来考虑具体的第$ j $项，
+	\begin{equation}
+		x_j\left(t\right)z_j\left(t\right) - \mu\left(t\right) \geq -\frac{\mu}{2}. \nonumber
+	\end{equation}
+	又因为$ \delta = 1 $，由定理\ref{th: stepDirection}(\ref{th: stepDirection.c})得$ \mu\left(t\right) = \mu $对于所有的$ t $都成立。故上式又可以写成，
+	\begin{equation}
+		x_j\left(t\right)z_j\left(t\right) \geq \frac{\mu}{2} > 0.
+	\end{equation}
+	上式对于所有$ 0 \leq t \leq 1 $都有$ x_j\left(t\right) > 0 $和$ z_j\left(t\right) > 0 $。令$ t = 1 $，得$ \bar{x}_j\left(t\right) > 0 $和$ \bar{z}_j\left(t\right) > 0 $。因为$ j $的取值是任意的，$ \left(\bar{x}, \bar{z}\right) > 0 $。从式(\ref{Eq: upperBounds})可知，$ \left(\bar{x}, \bar{z}\right) \in \mathcal{N}\left(1/4\right) $。
+\end{Proof}
+
+\subsection{收敛性分析}
+
+前面的定理给出了预估校正算法的框架。接下来的定理给出每一步预估步的一个下边界。
+\begin{theorem}
+	在每一步预估步中，$ \theta \geq \frac{1}{2\sqrt{n}} $。
+\end{theorem}
+\begin{Proof}
+	预估步中，$ \left(x, z\right) \in \mathcal{N}\left(1/4\right) $并且$ \delta = 0 $，因而有，
+	\begin{equation}
+		\parallel XZe - \mu e\parallel \leq \frac{\mu}{4}. \nonumber
+	\end{equation}
+	而从引理\ref{le: technicalResults}的(\ref{le: technicalResults.a})和(\ref{le: technicalResults.b})可得 ，
+	\begin{equation}
+		\parallel \Delta X\Delta Ze \parallel = \parallel PQe \parallel \leq \frac{1}{2}{\parallel r \parallel}^2 = \frac{1}{2}n\mu. \nonumber
+	\end{equation}
+	代入式(\ref{Eq: triangleInequality})可得到如下式，
+	\begin{equation}
+		\parallel X\left(t\right)Z\left(t\right)e - \mu\left(t\right)e \parallel \leq \left(1 - t\right)\frac{\mu}{4} + t^2\frac{\mu}{2}. \nonumber
+	\end{equation}
+	现在，令$ t \leq \left(2\sqrt{n}\right)^{-1} $，$ t^2n/2 \leq 1/8 $。对于$ n \geq 2 $时，$ t \leq 1/2 $有，
+	\begin{equation}
+		\begin{aligned}
+			\parallel X\left(t\right)Z\left(t\right)e - \mu\left(t\right) e \parallel & \leq  \left(1 - t\right)\frac{\mu}{4} + \frac{\mu}{8} \\
+			& \leq \left(1 - t\right)\frac{\mu}{4} + \left(1 - t\right)\frac{\mu}{4} \\
+			& = \left(1 - t\right)\frac{\mu}{2} \\
+			& = \frac{\mu\left(t\right)}{2}.
+		\end{aligned} \nonumber
+	\end{equation}
+	根据邻域的定义可得$ \left(x\left(t\right), z\left(t\right)\right) \in \mathcal{N}\left(1/2\right) $。又因为任意一个$ t \leq \left(2\sqrt{n}\right)^{-1} $，由式(\ref{Eq: predictorStepLength})可知$ \theta \geq \left(2\sqrt{n}\right)^{-1} $。证毕。
+\end{Proof}
+令$ \left(x^{(k)}, z^{(k)}\right) $为第$ k $次迭代的解，同时令，
+\begin{equation}
+	\rho^{(k)} = \rho\left(x^{(k)}, z^{(k)}\right), \quad \mu^{(k)}\left(x^{(k)}, z^{(k)}\right). \nonumber
+\end{equation}
+我们的目标是证明算法的收敛性。即需要证明$ k $在趋于无穷的时候，$ \rho^{(k)} $和$ \mu^{(k)} $趋于零。这里算法初始点选择为$ x^{(0)} = z^{(0)} = e $，因而$ \mu^{(0)} = 1 $。由定理\ref{th: predictorCorrector}可知，在每一次偶数迭代步完成之后，也就是$ 2k $，有下面式子成立，
+\begin{equation}
+	\label{Eq: mu2k}
+	\mu^{(2k)} \leq \left(1 - \frac{1}{2\sqrt{n}}\right)^k.
+\end{equation}
+而校正步不会改变$ \mu $值，故
+\begin{equation}
+	\mu^{(2k - 1)} = \mu^{(2k)}. \nonumber
+\end{equation}
+故当$ k \to \infty $，有，
+\begin{equation}
+	\lim_{k \to \infty} \mu^{(k)} = 0. \nonumber
+\end{equation}
+
+现在考虑$ \rho^{(k)} $。从定理\ref{th: stepDirection}的(\ref{th: stepDirection.b})和(\ref{th: stepDirection.c})可知，我们可以使用不可行程度的下降量来跟踪非互补性程度的下降量，即，
+\begin{equation}
+	\rho^{(k)} = \mu^{(k)}\rho^{(0)}. \nonumber
+\end{equation}
+因此当$ \mu^{(k)} $趋于零时，$ \rho^{(k)} $同样趋于零。
+
+事实上，还可以得到接下来的定理。
+\begin{theorem}
+	极限$ x^* = \lim_{k \to \infty}x^{(k)} $和$ z^* = \lim_{k \to \infty}z^{(k)} $存在，并且$ \left(x^*, z^*\right) $即是最优解。此外，向量$ x^* $和$ z^* $之间严格互补。意味着，对每一个$ j $，$ x_j^*z_j^* = 0 $，但可能是$ x_j^* > 0 $或$ z_j^* > 0 $。
+\end{theorem}
+
+关于上述定理的证明是相当有技术性的。它的核心观点是证明序列收敛。证明后续会在SDP的齐次自对偶嵌入时补充，其中证明类似。下面只是给出一个重要定理，
+\begin{theorem}
+	存在正常数$ c_1, c_2, ..., c_n $，当$ \left(x, z\right) \in \mathcal{N}\left(\beta\right) $时，有$ x_j + z_j \geq c_j > 0 $，$ j = 1, 2, ..., n $。
+\end{theorem}
+
+证明略。
+
+\subsection{算法复杂性}
+
+工程上，我们不可能执行无限次迭代，而是预先设置一个阈值，当$ \mu^{(k)} $小于这个阈值时即停止迭代。这个阈值记为$ 2^{-L} $，$ L $是一个数。我们通常希望阈值设置为$ 10^{-8} $，对应的$ L\approx 26 $。
+
+由式(\ref{Eq: mu2k})可得，偶数次迭代时，
+\begin{equation}
+	\mu^{(2k)} \leq \left(1 - \frac{1}{2\sqrt{n}}\right)^k \leq 2^{-L}. \nonumber
+\end{equation}
+两边取对数后得，
+\begin{equation}
+	k \geq \frac{L}{-\ln\left(1 - \frac{1}{2\sqrt{n}}\right)}. \nonumber
+\end{equation}
+又因为$ -\ln\left(1 - x\right) \leq x $，有，
+\begin{equation}
+	k \geq 2L\sqrt{n} \geq \ln\frac{L}{-\left(1 - \frac{1}{2\sqrt{n}}\right)}. \nonumber
+\end{equation}
+故最多有$ k \geq 2L\sqrt{n} $次迭代。而这里使用的$ k $只代表一半的迭代步数。因而至多迭代$ 4L\sqrt{n} $步，$ \mu $值会下降到设定阈值以下。这也说明预估矫正算法是一个多项式算法。所谓的多项式算法就是指可以通过一个关于$ n $的多项式迭代步数后可以到达任意想要精度的算法(注意：这里不是指$ 4L\sqrt{n} $自己是一个多项式，而是指它是一个关于$ n $的线性方程的边界)。
+
+\section{算法完整流程}
+
+在接下来一节，我们将开发完整算法解决齐次自对偶问题(\ref{Eq: HSDP})。
+\subsection{分情况讨论}
+
+回到齐次自对偶问题的标准形式，给对应约束添加的松弛变量$ z $，$ w $和$ \psi $，
+\begin{equation}
+	\label{Eq: slackedHSDP}
+	\begin{array}{crrrrrrrcc}
+	\textrm{maximize} & & & & & & & 0 & &  \\
+	\textrm{subject to} & & - \  & A^{T}y \  & + \  & c\phi \  & + \  & z & \leq & 0, \\
+	& Ax  & & & - \  & b\phi \  & + \  & w & \leq & 0, \\
+	& -c^{T}x & + \  & b^{T}y \  & & & + \  & \psi & \leq & 0, \\
+	& & x, & y, & \phi, & z, & w, & \psi & \geq & 0.
+	\end{array}
+\end{equation}
+由定理\ref{th:  SCST}可知，如果对于所有的$ j $有$ \bar{x}_j + \bar{z}_j > 0 $，对于所有的$ i $有$ \bar{y}_i + \bar{w}_i > 0 $，且$ \bar{\phi} + \bar{\psi} > 0 $，则称这样的可行解$ \left(\bar{x}, \bar{y}, \bar{\phi}, \bar{z}, \bar{w}, \bar{\psi}\right) $是严格互补的。
+
+接下来的定理总结和拓展第\ref{se: HSDembedding}节的讨论内容。
+\begin{theorem}
+	\label{th: optimalJudgement}
+	假设$ \left(\bar{x}, \bar{y}, \bar{\phi}, \bar{z}, \bar{w}, \bar{\psi}\right) $是问题(\ref{Eq: slackedHSDP})的一个严格互补可行解(因此也是最优解)，
+	\begin{enumerate}[(1)]
+		\item \label{th: optimalJudgement.a}如果$ \bar{\phi} > 0 $，则$ x^* = \bar{x}/\bar{\phi} $是原始问题(\ref{Eq: primalLP})的最优解，且$ y^* = \bar{y}/\bar{\phi} $是对偶问题(\ref{Eq: dualLP})的最优解；
+		\item \label{th: optimalJudgement.b}如果$ \bar{\phi} = 0 $，则可能是$ c^T\bar{x} > 0 $或$ b^T\bar{y} < 0 $。
+		\begin{enumerate}[(a)]
+			\item \label{th: optimalJudgement.b.a}如果$ c^T\bar{x} > 0 $，则对偶问题是不可行问题；
+			\item \label{th: optimalJudgement.b.b}如果$ b^T\bar{y} < 0 $，则原始问题是不可行问题。
+		\end{enumerate}
+	\end{enumerate}
+\end{theorem}
+\begin{Proof}
+	(\ref{th: optimalJudgement.a})已经在第\ref{se: HSDembedding}节证明。下面着重证明(\ref{th: optimalJudgement.b})。假设$ \bar{\phi} = 0 $，因为严格互补，$ \bar{\psi} > 0 $。因此$ \bar{x} $和$ \bar{y} $满足，
+	\begin{equation}
+		\label{Eq: resultSCST}
+		\begin{aligned}
+			A^T\bar{y} & \geq 0, \\
+			A\bar{x} & \leq 0, \\
+			b^T\bar{y} & < c^T\bar{x}.
+		\end{aligned}
+	\end{equation}
+	从最后一个不等式可以看出不可能会出现$ b^T\bar{y} \geq 0 $和$ c^T\bar{x} \leq 0 $的情况，意味着可能的情况是$ c^T\bar{x} > 0 $，$ b^T\bar{y} < 0 $或以上两种情况同时出现。不失一般性，假设$ c^T\bar{x} > 0 $，之后我们会通过反证法证实这种条件下对偶问题是不可行问题。假设存在向量$ y^0 \geq 0 $，有
+	\begin{equation}
+		A^Ty^0 \geq c.
+	\end{equation}
+	因为$ \bar{x} \geq 0 $，在上式两边同时乘以$ \bar{x}^T $不改变不等式的符号，
+	\begin{equation}
+		\bar{x}^TA^Ty^0 \geq \bar{x}^Tc > 0. \nonumber
+	\end{equation}
+	现在得出上不等式左边严格为正，但从式(\ref{Eq: resultSCST})，在非负$ y^0 $条件下，上式左边不可能能为正，即
+	\begin{equation}
+		\bar{x}^TA^Ty^0 = \left(A\bar{x}\right)^Ty^0 \leq 0. \nonumber
+	\end{equation}
+	结果与假设矛盾，故对偶问题必为不可行问题。
+	同理可证定理\ref{th: optimalJudgement}(\ref{th: optimalJudgement.b.b})。证毕。
+\end{Proof}
+
+\subsection{简化KKT系统方程}
+
+我们这里先讨论一下KKT系统方程式(\ref{Eq: infeasibleSD})
+和(\ref{Eq: noncomplementarySD})。在预估校正算法里，解决这个系统方程是最消耗时间的。首先解出$ \Delta z $得，
+\begin{equation}
+	\label{Eq: reducedKKTSystem.a}
+	\begin{aligned}
+		\Delta z & = X^{-1}\left(-Z\Delta x + \delta\mu e\right) \\
+		& = -X^{-1}Z\Delta x + \delta\mu X^{-1}e - z,
+	\end{aligned}
+\end{equation}
+把上式代入(\ref{Eq: infeasibleSD})得到简化的KKT系统(Reduced KKT System)方程，
+\begin{equation}
+	\left(A - X^{-1}Z\right)\Delta x = -\left(1- \delta\right)\rho + z - \delta\mu X^{-1}e. \nonumber
+\end{equation}
+同理，还可以得到
+\begin{eqnarray}
+	\Delta z & = & -X^{-1}Z\Delta x + \delta\mu X^{-1}e - z, \\
+	\Delta w & = &-Y^{-1}W\Delta y + \delta\mu Y^{-1}e - w, \\
+	\Delta \psi & = & -\frac{\psi}{\phi}\Delta \phi + \delta\mu/\phi - \psi.
+\end{eqnarray}
+以及对应的简化KKT系统方程组。而简化KKT系统方程组牵涉向量的不可行性和非互补性，故这里把它分成3部分，
+\begin{equation}
+	\begin{bmatrix}
+		\sigma \\ \rho \\ \gamma
+	\end{bmatrix}
+	= \begin{bmatrix}
+		& -A^T & c \\
+		A & & -b \\
+		-c^T & b^T & 
+	\end{bmatrix}
+	\begin{bmatrix}
+		x \\ y \\ \phi
+	\end{bmatrix}
+	+ \begin{bmatrix}
+		z \\ w \\ \psi
+	\end{bmatrix}
+	= \begin{bmatrix}
+		-A^Ty + c\phi + z \\
+		Ax - b\phi + w \\
+		-c^Tx + b^Ty + \psi
+	\end{bmatrix}. \nonumber
+\end{equation}
+给出式(\ref{Eq: HSDP})对应的简化KKT系统方程组为，
+\begin{equation}
+	\label{Eq: reducedKKT}
+	\begin{bmatrix}
+		-X^{-1}Z & -A^T & c \\
+		A & -Y^{-1}W & -b \\
+		-c^T & b^T & -\psi/\phi
+	\end{bmatrix}
+	\begin{bmatrix}
+		\Delta x \\ \Delta y \\ \Delta \phi
+	\end{bmatrix}
+	= \begin{bmatrix}
+		\hat{\sigma} \\ \hat{\rho} \\ \hat{\gamma}
+	\end{bmatrix},
+\end{equation}
+式中，
+\begin{equation}
+	\begin{bmatrix}
+		\hat{\sigma} \\ \hat{\rho} \\ \hat{\gamma}
+	\end{bmatrix}
+	=\begin{bmatrix}
+		\begin{array}{l}
+			-\left(1 - \delta\right)\sigma + z - \delta\mu X^{-1}e \\
+			-\left(1 - \delta\right)\rho + w - \delta\mu Y^{-1}e \\
+			-\left(1 - \delta\right)\gamma + \psi - \delta\mu/\phi
+		\end{array}
+	\end{bmatrix}. \nonumber
+\end{equation}
+这个系统方程组不是对称的，可以使用通用求解器进行求解，但方程的特殊结构会被忽略掉。为利用这种结构，我们分两步求解这个方程。使用前两个方程同时用$ \Delta\phi $表示出$ \Delta x $和$ \Delta y $，
+\begin{equation}
+	\label{Eq: abbrEq}
+	\begin{bmatrix}
+		\Delta x \\ \Delta y
+	\end{bmatrix}
+	= \begin{bmatrix}
+		-X^{-1}Z & -A^T \\
+		A & -Y^{-1}W
+	\end{bmatrix}^{-1}
+	\left(\begin{bmatrix}
+		\hat{\sigma} \\ \hat{\rho}
+	\end{bmatrix}
+	-\begin{bmatrix}
+		c \\ -b
+	\end{bmatrix}\Delta \phi 
+	\right). \nonumber
+\end{equation}
+简写成，
+\begin{equation}
+	\begin{bmatrix}
+		\Delta x \\ \Delta y
+	\end{bmatrix}
+	= \begin{bmatrix}
+	 f_x \\ f_y
+	\end{bmatrix}
+	- \begin{bmatrix}
+		g_x \\ g_y
+	\end{bmatrix}\Delta\phi,
+\end{equation}
+式中，
+\begin{equation}
+	f = \begin{bmatrix} f_x \\ f_y \end{bmatrix}, \quad
+	g = \begin{bmatrix} g_x \\ g_y \end{bmatrix}. \nonumber
+\end{equation}
+细心发现，这里需要求解两组方程组，
+\begin{eqnarray}
+	\begin{bmatrix}
+		-X^{-1}Z & -A^T \\
+		A & -Y^{-1}W
+	\end{bmatrix}
+	\begin{bmatrix}
+		f_x \\ f_y
+	\end{bmatrix}
+	= \begin{bmatrix}
+		\hat{\sigma} \\ \hat{\rho}
+	\end{bmatrix}, \qquad
+	\begin{bmatrix}
+		-X^{-1}Z & -A^T \\
+		A & -Y^{-1}W
+	\end{bmatrix}
+	\begin{bmatrix}
+		g_x \\ g_y
+	\end{bmatrix}
+	= \begin{bmatrix}
+		c \\ -b
+	\end{bmatrix}. \nonumber
+\end{eqnarray}
+使用式(\ref{Eq: abbrEq})消掉式(\ref{Eq: reducedKKT})最后一个方程的$ \Delta x $和$ \Delta y $得，
+\begin{equation}
+	\begin{bmatrix}
+		-c^T & b^T
+	\end{bmatrix}
+	\left(\begin{bmatrix}
+		f_x \\ f_y
+	\end{bmatrix}
+	-\begin{bmatrix}
+		g_x \\ g_y
+	\end{bmatrix}\Delta\phi
+	\right)
+	- \frac{\psi}{\phi}\Delta\phi = \hat{\gamma}. \nonumber
+\end{equation}
+可解出$ \Delta\phi $，
+\begin{equation}
+	\Delta\phi = \frac{c^Tf_x - b^Tf_y + \hat{\gamma}}{c^Tg_x - b^Tg_y - \psi/\phi}. \nonumber
+\end{equation}
+
+我们可以发现简化KKT系统方程组可通过求解两个方程组得到$ f $和$ g $。这两个方程组包含相同的系数矩阵。调整方程位置可得拟正定系统方程组(Quasidefinite System)，如
+\begin{equation}
+	\begin{bmatrix}
+	 -Y^{-1}W & A^T \\
+	A & X^{-1}Z
+	\end{bmatrix}
+	\begin{bmatrix}
+	g_y \\ g_x
+	\end{bmatrix}
+	= \begin{bmatrix}
+	-b \\ -c
+	\end{bmatrix}. \nonumber
+\end{equation}
+这只是个简单的代数处理办法，但在这类型问题中却经常遇到。
+
+齐次自对偶线性规划问题完整的算法流程如伪代码\ref{alg:Framwork}所示。
+
+%    --------------------------- Algorithm one ------------------------------------------
+\begin{algorithm}[H]
+%\begin{algorithm}
+	\SetAlgoNoLine
+%	\SetAlgoLined
+
+	\caption{预估校正算法} 
+	\label{alg:Framwork}
+	\KwIn{$ A, b, c, f $, 线性规划参数; $ \epsilon $, 停止阈值.}
+%	\newline
+	\KwOut{$ \left(x^*, y^*, \phi, z^*, w^*, \psi^*\right) $, 最优解;
+		$ f^* $, 最优目标函数值.} 
+	\textbf{Initialize} , $ \left(x, y, \phi, z, w, \psi\right) = \left(e, e, 1, e, e, 1\right) $ \; 
+	\While {不是最优}
+	{
+		$ \mu = \left(z^Tx + w^Ty + \psi\phi\right)/\left(n + m + 1\right) $ \;
+		$ \delta = \begin{cases}
+		0, \quad \quad on\ odd\ iterations \\
+		1, \quad \quad on\ even\ iterations
+		\end{cases} $ \;
+		$ \hat{\sigma} = -\left(1 - \delta\right)\sigma + z - \delta\mu X^{-1}e $ \;
+		$ \hat{\rho} = -\left(1 - \delta\right)\rho + w - \delta\mu Y^{-1}e $ \;
+		$ \hat{\gamma} = -\left(1 - \delta\right)\gamma + \psi - \delta\mu/\phi $ \;
+		求解两个$ \left(n + m\right) \times \left(n + m\right) $的拟正定系统方程组：\\
+		$ \begin{bmatrix} -Y^{-1}W & A \\ A^T & X^{-1}Z \end{bmatrix}
+		\begin{bmatrix} f_y \\ f_x \end{bmatrix}
+		= \begin{bmatrix} \hat{\rho} \\ -\hat{\sigma} \end{bmatrix},  $
+		$ \begin{bmatrix} -Y^{-1}W & A \\ A^T & X^{-1}Z \end{bmatrix}
+		\begin{bmatrix} g_y \\ g_x \end{bmatrix}
+		= \begin{bmatrix} -b \\ -c \end{bmatrix} $ \;
+		$ \Delta\phi = \left(c^Tf_x - b^Tf_y + \hat{\gamma}\right)/\left(c^Tg_x - b^Tg_y - \psi/\phi\right) $ \;
+		$ \begin{bmatrix} \Delta x \\ \Delta y \end{bmatrix}
+		= \begin{bmatrix} f_x \\ f_y \end{bmatrix}
+		- \begin{bmatrix} g_x \\ g_y \end{bmatrix}\Delta\phi $ \;
+		$ \Delta z = -X^{-1}Z\Delta x + \delta\mu X^{-1}e - z $ \;
+		$ \Delta w = -Y^{-1}W\Delta y + \delta\mu Y^{-1}e - w $ \;
+		$ \Delta \psi = -\frac{\psi}{\phi}\Delta \phi + \delta\mu/\phi - \psi $ \;
+		$ \theta = \begin{cases}
+		\max\left\{t: \left(x(t), ..., \psi(t)\right) \in \mathcal{N}\left(1/2\right) \right\}, & \quad on\ odd\ iterations \\
+		1, & \quad on\ even\ iterations
+		\end{cases} $ \;
+		$ x \leftarrow x + \theta\Delta x, \quad z \leftarrow z + \theta\Delta z $ \;
+		$ y \leftarrow y + \theta\Delta y, \quad w \leftarrow w + \theta\Delta w $ \;
+		$ \phi \leftarrow \phi + \theta\Delta \phi, \quad \psi \leftarrow \psi + \theta\Delta \psi $ \;
+	} 
+%	\Return $ V_{total} $ \; 
+\end{algorithm}
+%--------------------------------------------------------------------------------------
+\section{数值算例}
+下面给出几个算例进行验证
+\begin{equation}
+	\begin{array}{crrrrrrc}
+	\textrm{maximize} & x_1 & - 2x_2 & + x_3 & & &\\
+	\textrm{subject to} & x_1 & + x_2 & - 2x_3 & + x_4 & = & 0, \\
+	& 2x_1 & - x_2 & + 4x_3 & & \leq & 0, \\
+	& -x_1 & + 2x_2 & - 4x_3 &  & \leq & 0, \\
+	& x_j & \geq 0, & j = 1,& \cdots, & 4. &
+	\end{array}
+\end{equation}
+上式LP问题的最优解为$ \left(x_1, x_2, x_3, x_4\right) = \left(0, 12, 5, 8\right) $，目标函数值为$ f_{min} = -19 $。
+
+输入命令：
+\begin{verbatim}
+A = [1, 1, -2, 1; -1, -1, 2, -1; 2, -1, 4, 0; -1, 2, -4, 0];
+b = [10, -10, 8, 4]';
+c = [1, -2, 1, 0]';
+c = -c;
+[x, y, phi, z, w, psi, fval, status] = hsd(A, b, c);
+x
+f = -fval
+\end{verbatim}
+\color{lightgray} 
+\begin{verbatim}
+HSD method
+-----------------------------------------------------------------------------
+|                 PRIMAL     |                   DUAL     |          |
+iter   |      Obj Value      Infeas |      Obj Value      Infeas |       mu |
+-----------------------------------------------------------------------------
+1   |  0.0000000e+00     1.4e+01 |  1.2000000e+01     2.4e+00 |  1.0e+00 |
+2   |  2.1375661e+00     9.0e+00 |  8.8492063e+00     1.6e+00 |  3.3e-01 |
+3   |  2.1375661e+00     9.0e+00 |  8.8492063e+00     1.6e+00 |  3.3e-01 |
+4   |  5.9525764e+00     5.5e+00 |  9.5098523e+00     9.5e-01 |  1.5e-01 |
+5   |  5.9525764e+00     5.5e+00 |  9.5098523e+00     9.5e-01 |  1.5e-01 |
+6   |  1.1902398e+01     2.8e+00 |  1.3107519e+01     4.7e-01 |  5.4e-02 |
+7   |  1.1902398e+01     2.8e+00 |  1.3107519e+01     4.7e-01 |  5.4e-02 |
+8   |  1.7308765e+01     7.5e-01 |  1.7366377e+01     1.3e-01 |  1.2e-02 |
+9   |  1.7308765e+01     7.5e-01 |  1.7366377e+01     1.3e-01 |  1.2e-02 |
+10   |  1.8823847e+01     8.8e-02 |  1.8808974e+01     1.5e-02 |  1.4e-03 |
+11   |  1.8823847e+01     8.8e-02 |  1.8808974e+01     1.5e-02 |  1.4e-03 |
+12   |  1.8990025e+01     5.1e-03 |  1.8988860e+01     8.8e-04 |  8.0e-05 |
+13   |  1.8990025e+01     5.1e-03 |  1.8988860e+01     8.8e-04 |  8.0e-05 |
+14   |  1.8999497e+01     2.6e-04 |  1.8999438e+01     4.4e-05 |  4.0e-06 |
+15   |  1.8999497e+01     2.6e-04 |  1.8999438e+01     4.4e-05 |  4.0e-06 |
+16   |  1.8999975e+01     1.3e-05 |  1.8999972e+01     2.2e-06 |  2.0e-07 |
+17   |  1.8999975e+01     1.3e-05 |  1.8999972e+01     2.2e-06 |  2.0e-07 |
+18   |  1.8999999e+01     6.4e-07 |  1.8999999e+01     1.1e-07 |  1.0e-08 |
+19   |  1.8999999e+01     6.4e-07 |  1.8999999e+01     1.1e-07 |  1.0e-08 |
+20   |  1.9000000e+01     3.2e-08 |  1.9000000e+01     5.5e-09 |  5.1e-10 |
+21   |  1.9000000e+01     3.2e-08 |  1.9000000e+01     5.5e-09 |  5.1e-10 |
+22   |  1.9000000e+01     1.6e-09 |  1.9000000e+01     2.8e-10 |  2.5e-11 |
+23   |  1.9000000e+01     1.6e-09 |  1.9000000e+01     2.8e-10 |  2.5e-11 |
+24   |  1.9000000e+01     8.1e-11 |  1.9000000e+01     1.4e-11 |  1.3e-12 |
+25   |  1.9000000e+01     8.1e-11 |  1.9000000e+01     1.4e-11 |  1.3e-12 |
+
+x =
+
+0.0000
+12.0000
+5.0000
+8.0000
+
+
+f =
+
+-19.0000
+
+\end{verbatim} \color{black}
+
+\appendix
+%\renewcommand{\thesection}{附录~{\Alph{section}}.}
+\section{附录}
+\begin{theorem}
+	\label{th:  SCST}
+	如果原始和对偶LP问题都有可行解，则原始问题存在可行解$ \left(\bar{x}, \bar{w}\right) $和对偶问题存在可行解$ \left(\bar{y}, \bar{z}\right) $，使得$ \bar{x} + \bar{z} > 0 $，$ \bar{y} + \bar{w} > 0 $。
+\end{theorem}
+
+证明略。
+\begin{theorem}[严格互补松弛定理]
+	如果线性规划问题有最优解，则原始问题最优解$ \left(x^*, w^*\right) $和对偶问题最优解$ \left(y^*, z^*\right) $使得$ x^* + z^* > 0 $，$ y^* + w^* > 0 $。
+\end{theorem}
+
+证明略。
+
+\section{源代码}
+\input{hsd}
+
+
+\bibliographystyle{unsrt}
+\bibliography{refs}
+
+
+
+
+\end{document}
